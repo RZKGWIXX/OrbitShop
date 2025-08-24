@@ -1,0 +1,133 @@
+const express = require('express');
+const app = express();
+const http = require('http').createServer(app);
+const io = require('socket.io')(http);
+const bodyParser = require('body-parser');
+const path = require('path');
+const fs = require('fs');
+
+app.use(bodyParser.json());
+
+app.set('trust proxy', true);
+
+// --- In-memory data (catalog & orders) ---
+let items = [
+  { id: '1', title: 'Шипучка', price: 2, description: 'Освіжаюча шипучка', stock: 12, img: '/images/orbital.svg' },
+  { id: '2', title: 'Player Kicker', price: 1, description: 'Програма для викиду гравців', stock: 8, img: '/images/icon.svg' }
+];
+
+let orders = []; // in-memory orders
+
+// Anti-spam trackers
+const lastOrderByIp = new Map();
+const lastOrderByName = new Map();
+const SPAM_WINDOW_MS = 10 * 1000; // 10 seconds
+
+// --- API routes (defined BEFORE static assets) ---
+app.get('/api/items', (req, res) => {
+  res.json(items);
+});
+
+app.post('/api/order', (req, res) => {
+  const { name, itemId, quantity } = req.body;
+  if (!name || !itemId || !quantity) return res.status(400).json({ error: "Вкажіть ім'я та кількість" });
+  const it = items.find(i => i.id === String(itemId));
+  if (!it) return res.status(400).json({ error: 'Товар не знайдено' });
+  const q = Number(quantity);
+  if (!Number.isInteger(q) || q <= 0) return res.status(400).json({ error: 'Кількість повинна бути цілим позитивним числом' });
+  if (it.stock < q) return res.status(400).json({ error: 'Немає достатньої кількості на складі' });
+
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const now = Date.now();
+  const lastIp = lastOrderByIp.get(ip) || 0;
+  const lastName = lastOrderByName.get(name) || 0;
+  if (now - lastIp < SPAM_WINDOW_MS || now - lastName < SPAM_WINDOW_MS) {
+    return res.status(429).json({ error: 'Забагато запитів. Зачекайте кілька секунд і спробуйте ще раз.' });
+  }
+
+  it.stock -= q;
+  const total = it.price * q;
+  const order = {
+    id: Date.now().toString(),
+    name,
+    item: { id: it.id, title: it.title, price: it.price },
+    quantity: q,
+    total,
+    status: 'pending',
+    createdAt: new Date().toISOString()
+  };
+  orders.unshift(order);
+
+  lastOrderByIp.set(ip, now);
+  lastOrderByName.set(name, now);
+
+  io.emit('newOrder', order);
+  io.emit('stockUpdate', { id: it.id, stock: it.stock });
+  io.emit('ordersUpdate', orders);
+
+  res.json({ success: true, order });
+});
+
+app.get('/api/orders', (req, res) => {
+  res.json(orders);
+});
+
+app.post('/api/orders/:id/approve', (req, res) => {
+  const id = req.params.id;
+  const ord = orders.find(o => o.id === id);
+  if (!ord) return res.status(404).json({ error: 'Order not found' });
+  ord.status = 'approved';
+  io.emit('ordersUpdate', orders);
+  res.json({ success: true, order: ord });
+});
+
+app.post('/api/orders/:id/reject', (req, res) => {
+  const id = req.params.id;
+  const ord = orders.find(o => o.id === id);
+  if (!ord) return res.status(404).json({ error: 'Order not found' });
+  ord.status = 'rejected';
+  const it = items.find(i => i.id === ord.item.id);
+  if (it) it.stock += ord.quantity;
+  io.emit('ordersUpdate', orders);
+  io.emit('stockUpdate', { id: it.id, stock: it.stock });
+  res.json({ success: true, order: ord });
+});
+
+app.post('/api/orders/clear', (req, res) => {
+  orders = [];
+  io.emit('ordersUpdate', orders);
+  res.json({ success: true });
+});
+
+app.get('/api/summary', (req, res) => {
+  const approved = orders.filter(o => o.status === 'approved');
+  const count = approved.length;
+  const revenue = approved.reduce((s, o) => s + (o.total || 0), 0);
+  res.json({ approvedCount: count, revenue });
+});
+
+app.post('/api/updateStock', (req, res) => {
+  const { id, stock } = req.body;
+  const it = items.find(i => i.id === String(id));
+  if (!it) return res.status(400).json({ error: 'Item not found' });
+  it.stock = Number(stock) || 0;
+  io.emit('stockUpdate', { id: it.id, stock: it.stock });
+  io.emit('ordersUpdate', orders);
+  res.json({ success: true, item: it });
+});
+
+// If any /api/* route not matched above, respond with JSON 404 (important)
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'API endpoint not found' });
+});
+
+// --- static assets and catch-all (serve SPA) AFTER API routes ---
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Serve index.html for non-API routes (SPA)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+const PORT = process.env.PORT || 3000;
+http.listen(PORT, () => console.log('Server running on http://localhost:' + PORT));
