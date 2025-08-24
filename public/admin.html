@@ -1,0 +1,23 @@
+<!doctype html><html lang="uk"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Admin - Orbit Store</title><link rel="stylesheet" href="style.css"/></head><body>
+<script>if(localStorage.getItem('isAdmin')!=='1'){const p=prompt('Enter admin password:');if(p==='236790'){localStorage.setItem('isAdmin','1');}else{alert('Access denied');location.href='/';}}</script>
+<header class="header"><div class="header-left"><h1 class="logo">Orbit Store - Admin</h1></div><div style="margin-left:auto"><button id="logout" class="btn-secondary">Logout</button></div></header>
+<main class="main-content admin-main">
+  <div style="display:flex;justify-content:space-between;align-items:center"><h2 class="section-title">Orders</h2><div><button id="clearOrdersBtn" class="btn-secondary">Clear All Orders</button></div></div>
+  <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+    <input id="new_title" class="input" placeholder="Назва" style="width:180px"/>
+    <input id="new_price" class="input" placeholder="Ціна грн" style="width:100px"/>
+    <input id="new_stock" class="input" placeholder="Кількість" style="width:100px"/>
+    <input id="new_img" class="input" placeholder="URL зображення" style="width:220px"/>
+    <button id="addItemBtn" class="btn-primary">Додати товар</button>
+  </div>
+  <div id="adminSummary" class="admin-summary">Успішних: <strong>0</strong> — Прибуток: <strong>0 грн</strong></div>
+  <div class="admin-columns">
+    <div class="admin-col"><h3>Pending</h3><div id="pendingList" class="admin-list"></div></div>
+    <div class="admin-col"><h3>Approved</h3><div id="approvedList" class="admin-list"></div></div>
+    <div class="admin-col"><h3>Rejected</h3><div id="rejectedList" class="admin-list"></div></div>
+    <div class="admin-col"><h3>Cancelled</h3><div id="cancelledList" class="admin-list"></div></div>
+  </div>
+  <h2 class="section-title" style="margin-top:18px">Manage Stock</h2>
+  <div id="itemsList"></div>
+</main>
+<script src="/socket.io/socket.io.js"></script><script src="admin.js" defer></script></body></html>

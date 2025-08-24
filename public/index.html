@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="uk">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Orbit Store</title><link rel="stylesheet" href="style.css"/></head>
+<body>
+<header class="header"><div class="header-left"><h1 class="logo">Orbit Store</h1></div></div></div><div class="header-right"><div id="headerNick" class="user-nick">Гість</div></div></header>
+<main class="main-content"><section id="shop-section" class="content-section active"><div class="welcome-card"><p>Welcome to Orbit Store! Browse our products and order.</p></div><section class="products-section"><h2 class="section-title">Товари</h2><div id="products-grid" class="products-grid"></div></section></section></main>
+<nav class="bottom-nav">
+  <div class="nav-item active" id="navMyOrders" data-action="nav-shop" data-action2="open-my-orders"><span>Мої замовлення</span></div>
+</nav>
+<div id="loading-overlay" class="loading-overlay"><div class="loading-spinner"></div><p>Обробка...</p></div>
+<div id="toasts"></div>
+<div id="secretBtn" title="admin"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script src="script.js" defer></script>
+</body></html>
