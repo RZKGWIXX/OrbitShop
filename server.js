@@ -11,25 +11,58 @@ app.set('trust proxy', true);
 
 const ORDERS_FILE = path.join(__dirname, 'orders.json');
 const ITEMS_FILE = path.join(__dirname, 'items.json');
+const BACKUP_DIR = path.join(__dirname, 'backups');
+if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
-let orders = [];
-let items = [
+function loadJsonFileSafe(filePath, defaultValue) {
+  try {
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.error('Failed to read/parse', filePath, e);
+  }
+  return defaultValue;
+}
+
+function writeJsonFileSafe(filePath, data) {
+  try {
+    const tmp = filePath + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
+    fs.renameSync(tmp, filePath);
+    const stamp = new Date().toISOString().replace(/[:.]/g,'-');
+    const bak = path.join(BACKUP_DIR, path.basename(filePath) + '.' + stamp + '.bak');
+    fs.writeFileSync(bak, JSON.stringify(data, null, 2), 'utf8');
+    return true;
+  } catch (e) {
+    console.error('Failed to write file', filePath, e);
+    return false;
+  }
+}
+
+// load persisted or default data
+let orders = loadJsonFileSafe(ORDERS_FILE, []);
+let items = loadJsonFileSafe(ITEMS_FILE, [
   { id: '1', title: 'Шипучка', price: 2, description: 'Освіжаюча шипучка', stock: 15, img: '/images/orbital.svg', active: true },
   { id: '2', title: 'Player Kicker', price: 1, description: 'Програма для викиду гравців', stock: 8, img: '/images/icon.svg', active: true }
-];
+]);
 
-try {
-  if (fs.existsSync(ORDERS_FILE)) orders = JSON.parse(fs.readFileSync(ORDERS_FILE, 'utf8'));
-} catch(e){ console.warn('Failed loading orders.json', e); }
-try {
-  if (fs.existsSync(ITEMS_FILE)) {
-    const parsed = JSON.parse(fs.readFileSync(ITEMS_FILE, 'utf8'));
-    if (Array.isArray(parsed) && parsed.length) items = parsed;
-  }
-} catch(e){ console.warn('Failed loading items.json', e); }
+// Ensure files exist on disk
+writeJsonFileSafe(ITEMS_FILE, items);
+writeJsonFileSafe(ORDERS_FILE, orders);
 
-function persistOrders(){ try{ fs.writeFileSync(ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf8'); }catch(e){console.error(e);} }
-function persistItems(){ try{ fs.writeFileSync(ITEMS_FILE, JSON.stringify(items, null, 2), 'utf8'); }catch(e){console.error(e);} }
+function persistOrders(){ try{ writeJsonFileSafe(ORDERS_FILE, orders); }catch(e){console.error(e);} }
+function persistItems(){ try{ writeJsonFileSafe(ITEMS_FILE, items); }catch(e){console.error(e);} }
+
+// Autosave every 60s
+setInterval(()=>{
+  try{ persistItems(); persistOrders(); console.log('[autosave] saved items and orders at', new Date().toISOString()); }catch(e){ console.error('Autosave failed', e); }
+}, 60 * 1000);
+
+// graceful shutdown
+process.on('SIGINT', ()=>{ console.log('[shutdown] SIGINT received, saving data...'); persistItems(); persistOrders(); process.exit(0); });
+process.on('SIGTERM', ()=>{ console.log('[shutdown] SIGTERM received, saving data...'); persistItems(); persistOrders(); process.exit(0); });
 
 const lastOrderByIp = new Map();
 const lastOrderByName = new Map();
@@ -122,7 +155,6 @@ app.post('/api/orders/:id/reject', (req, res) => {
   const ord = orders.find(o => o.id === id);
   if (!ord) return res.status(404).json({ error:'Order not found' });
   ord.status = 'rejected';
-  // return stock if pending?
   const it = items.find(i => i.id === ord.item.id);
   if (it) it.stock += ord.quantity;
   persistOrders();
@@ -169,4 +201,4 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public','index.html')));
 
 const PORT = process.env.PORT || 3000;
-http.listen(PORT, ()=> console.log('Server on http://localhost:'+PORT));
+http.listen(PORT, ()=> console.log('[start] Server on http://localhost:'+PORT+' — PID:'+process.pid));

@@ -1,11 +1,20 @@
 [
   {
-    "id": "1756063933177",
+    "id": "1",
     "title": "Шипучка",
     "price": 2,
-    "description": "",
+    "description": "Освіжаюча шипучка",
+    "stock": 15,
+    "img": "/images/orbital.svg",
+    "active": true
+  },
+  {
+    "id": "2",
+    "title": "Player Kicker",
+    "price": 1,
+    "description": "Програма для викиду гравців",
     "stock": 8,
-    "img": "/images/Shipuchka.png",
+    "img": "/images/icon.svg",
     "active": true
   }
 ]
