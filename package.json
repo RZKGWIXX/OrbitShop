@@ -1,5 +1,5 @@
 {
-  "name": "orbit-store",
+  "name": "orbit-store-jsonbin-adapter",
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
@@ -8,6 +8,7 @@
   "dependencies": {
     "express": "^4.18.2",
     "socket.io": "^4.7.2",
-    "body-parser": "^1.20.2"
+    "body-parser": "^1.20.2",
+    "node-fetch": "^3.4.0"
   }
 }

@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "id": "1",
+      "title": "Шипучка",
+      "description": "Опис",
+      "img": "/img/fizz.jpg",
+      "price": 2,
+      "stock": 15,
+      "active": true
+    }
+  ]
+}
