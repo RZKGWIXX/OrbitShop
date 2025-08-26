@@ -1,11 +1,11 @@
 [
   {
-    "id": "1756063933177",
+    "id": "1",
     "title": "Шипучка",
     "price": 2,
-    "description": "",
-    "stock": 8,
-    "img": "/images/Shipuchka.png",
+    "description": "Освіжаюча шипучка",
+    "stock": 11,
+    "img": "/images/orbital.svg",
     "active": true
   }
 ]
