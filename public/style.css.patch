@@ -1,0 +1,28 @@
+/* Mobile safe area patch - drop this style.css into your project's public/style.css
+   This file only contains the mobile fixes (append or merge into your existing CSS).
+*/
+
+:root { --bottom-nav-height: 72px; --mobile-safe-gap: 22px; }
+
+/* Ensure main content has enough bottom padding so last elements aren't covered */
+.main-content {
+  padding-bottom: calc(var(--bottom-nav-height) + var(--mobile-safe-gap) + 40px) !important;
+}
+
+/* Give product cards extra inner spacing so the buy button is always above footer */
+.product-card {
+  padding-bottom: calc(var(--bottom-nav-height) + 26px) !important;
+}
+
+/* On small screens tighten layout but keep buy button visible */
+@media (max-width: 480px) {
+  .main-content { padding-bottom: calc(var(--bottom-nav-height) + var(--mobile-safe-gap) + 28px) !important; }
+  .product-card { padding-bottom: calc(var(--bottom-nav-height) + 18px) !important; }
+  .buy-button { position: relative; z-index: 5 !important; }
+  .bottom-nav { height: var(--bottom-nav-height) !important; padding-top: 10px !important; padding-bottom: 10px !important; }
+}
+
+/* Also ensure toasts and modals are above footer */
+#toasts, .modal { z-index: 11000 !important; }
+
+/* End of patch */

@@ -1,33 +1,16 @@
+Patch contents
+- public/style.css  -> CSS patch to prevent bottom nav from covering Buy buttons on small screens.
 
-Orbit Store - jsonbin.io adapter
----------------------------------
-This small package provides server.js that reads/writes items and orders using jsonbin.io bins.
+How to apply
+1) Make a backup of your current public/style.css:
+   cp public/style.css public/style.css.bak
+2) Append the contents of this file to the end of your public/style.css:
+   cat public/style.css >> public/style.css.bak  # optional backup step
+   cat public/style.css  # inspect
+   (Then) echo '...contents...' >> public/style.css  OR copy the file over.
+   Example (Linux):
+     cat public/style.css >> public/style.css.bak
+     cat public/style.css.patch >> public/style.css  # if you placed this patch file
+3) Restart your dev server (if needed) and test on mobile.
 
-Files:
-  - server.js        (the express server)
-  - package.json     (dependencies)
-
-Environment variables (set these in Render or your host):
-  JSONBIN_ITEMS_BIN_ID   - jsonbin bin id for items (the bin should contain {"items": [...] } or an array)
-  JSONBIN_ORDERS_BIN_ID  - jsonbin bin id for orders (the bin should contain {"orders": [...] } or an array)
-  JSONBIN_MASTER_KEY     - your jsonbin Master Key (required to GET/PUT private bins)
-  PORT (optional)        - port to run the server (default 3000)
-
-How to use:
-  1. Place server.js into your project root (replace existing server.js) OR run this adapter in the same folder as your frontend `public/`.
-  2. Install deps: npm install
-  3. Set env vars in Render (or local .env). Example:
-     JSONBIN_ITEMS_BIN_ID=xxxxx
-     JSONBIN_ORDERS_BIN_ID=yyyyy
-     JSONBIN_MASTER_KEY=YOUR_MASTER_KEY
-  4. Start: npm start
-
-Notes:
-  - On startup the server will try to GET from provided bins; if it can't, it will use local items.json and orders.json.
-  - On every update the server will attempt to PUT the new content to jsonbin. If the PUT fails it will write locally.
-  - The server expects jsonbin v3 API (https://api.jsonbin.io/v3/b/<binId>/latest and PUT to /v3/b/<binId>).
-  - If your jsonbin configuration requires other headers (e.g. special collection id header), set them in the code (open server.js and adjust headers in jsonbinGet/jsonbinPut).
-
-If you want, I can also:
-  - Automatically create the bins in your collection via the API (requires Master Key) and return the created binIds.
-  - Modify your current server in-place if you upload the project folder (so I can patch server.js directly).
+If you'd like, I can instead send a full rebuilt archive of the entire project with this fix merged in — tell me and I'll generate it.
