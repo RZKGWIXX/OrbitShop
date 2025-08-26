@@ -1,8 +1,5 @@
-/* server.js — чистий, виправлений варіант
-   Змінні оточення:
-     JSONBIN_MASTER_KEY  - master key для jsonbin.io (серверний)
-     JSONBIN_ITEMS_BIN_ID - binId для items (записуємо { items: [...] })
-     JSONBIN_ORDERS_BIN_ID - binId для orders (записуємо { orders: [...] })
+/* server.js — Orbit Store (jsonbin hardcoded)
+   WARNING: Secrets are hardcoded below. Replace with env vars ASAP.
 */
 
 const express = require('express');
@@ -21,9 +18,14 @@ const ORDERS_FILE = path.join(__dirname, 'orders.json');
 const BACKUP_DIR = path.join(__dirname, 'backups');
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
-const JSONBIN_MASTER_KEY = process.env.JSONBIN_MASTER_KEY || null;
-const JSONBIN_ITEMS_BIN_ID = process.env.JSONBIN_ITEMS_BIN_ID || null;
-const JSONBIN_ORDERS_BIN_ID = process.env.JSONBIN_ORDERS_BIN_ID || null;
+// -----------------------------
+// !!! HARDCODED JSONBIN CREDENTIALS !!!
+// Replace with environment variables later for security
+const JSONBIN_MASTER_KEY = '$2a$10$RgQMxiMWDn4XRQ70aEs7NuP/rw2z1Ay1qEwR.xrXwTsIIISGQVTVm';
+const JSONBIN_ITEMS_BIN_ID = '68aca83a43b1c97be929d6c3';
+const JSONBIN_ORDERS_BIN_ID = '68aca858ae596e708fd58f93';
+// -----------------------------
+
 const JSONBIN_BASE = 'https://api.jsonbin.io/v3/b';
 
 function log(){ console.log.apply(console, arguments); }
@@ -66,7 +68,6 @@ let orders = [];
 // Load locals if present
 const localItems = loadJsonFileSafe(ITEMS_FILE, null);
 if (localItems) {
-  // support both array or wrapper { items: [...] }
   if (Array.isArray(localItems)) items = localItems;
   else if (localItems.items && Array.isArray(localItems.items)) items = localItems.items;
 }
@@ -173,7 +174,7 @@ const lastOrderByIp = new Map();
 const lastOrderByName = new Map();
 const SPAM_WINDOW_MS = 10 * 1000;
 
-// Routes (same semantics as before)
+// Routes
 app.get('/api/items', (req, res) => res.json(items));
 
 app.post('/api/addItem', async (req, res) => {
