@@ -1,5 +1,5 @@
 {
-  "name": "orbit-store-remote-adapter",
+  "name": "orbit-store-jsonbin-adapter",
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {

@@ -1,23 +1,33 @@
 
-Orbit Store - remote JSON adapter (backend helper)
--------------------------------------------------
+Orbit Store - jsonbin.io adapter
+---------------------------------
+This small package provides server.js that reads/writes items and orders using jsonbin.io bins.
 
-What this archive contains
-- server.js  - Express server that reads/writes items and orders. If REMOTE_* env vars are set it uses those remote URLs.
-- package.json - dependencies.
+Files:
+  - server.js        (the express server)
+  - package.json     (dependencies)
 
-How to use
-1) Replace your server.js with this file (or merge logic into your existing server.js).
-2) Install dependencies:
-   npm install
-3) Configure environment variables for your Render service (or local):
-   - REMOTE_ITEMS_URL   (e.g. https://api.example.com/bins/abcd/items)
-   - REMOTE_ORDERS_URL  (e.g. https://api.example.com/bins/abcd/orders)
-   - REMOTE_API_KEY     (optional token if your remote requires auth)
-If REMOTE_* are not set, the server will continue to use local items.json and orders.json files.
-Behavior
-- On startup the server tries to GET remote items/orders and will use them if successful.
-- When changing items/orders (add/update/delete/order/approve/reject/cancel), the server attempts to save to remote via PUT (falls back to POST), and if remote write fails it saves locally.
-Important notes
-- Different JSON hosting providers have different APIs (some require POST to update, some require special headers). Use the REMOTE_* variables to point to the correct endpoints and add REMOTE_API_KEY if needed.
-- Keep a local backup items.json and orders.json in the project root before switching.
+Environment variables (set these in Render or your host):
+  JSONBIN_ITEMS_BIN_ID   - jsonbin bin id for items (the bin should contain {"items": [...] } or an array)
+  JSONBIN_ORDERS_BIN_ID  - jsonbin bin id for orders (the bin should contain {"orders": [...] } or an array)
+  JSONBIN_MASTER_KEY     - your jsonbin Master Key (required to GET/PUT private bins)
+  PORT (optional)        - port to run the server (default 3000)
+
+How to use:
+  1. Place server.js into your project root (replace existing server.js) OR run this adapter in the same folder as your frontend `public/`.
+  2. Install deps: npm install
+  3. Set env vars in Render (or local .env). Example:
+     JSONBIN_ITEMS_BIN_ID=xxxxx
+     JSONBIN_ORDERS_BIN_ID=yyyyy
+     JSONBIN_MASTER_KEY=YOUR_MASTER_KEY
+  4. Start: npm start
+
+Notes:
+  - On startup the server will try to GET from provided bins; if it can't, it will use local items.json and orders.json.
+  - On every update the server will attempt to PUT the new content to jsonbin. If the PUT fails it will write locally.
+  - The server expects jsonbin v3 API (https://api.jsonbin.io/v3/b/<binId>/latest and PUT to /v3/b/<binId>).
+  - If your jsonbin configuration requires other headers (e.g. special collection id header), set them in the code (open server.js and adjust headers in jsonbinGet/jsonbinPut).
+
+If you want, I can also:
+  - Automatically create the bins in your collection via the API (requires Master Key) and return the created binIds.
+  - Modify your current server in-place if you upload the project folder (so I can patch server.js directly).

@@ -4,8 +4,17 @@
     "title": "Шипучка",
     "price": 2,
     "description": "Освіжаюча шипучка",
-    "stock": 11,
+    "stock": 15,
     "img": "/images/orbital.svg",
+    "active": true
+  },
+  {
+    "id": "2",
+    "title": "Player Kicker",
+    "price": 1,
+    "description": "Програма для викиду гравців",
+    "stock": 8,
+    "img": "/images/icon.svg",
     "active": true
   }
 ]
