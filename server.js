@@ -1,13 +1,8 @@
-/*
-  server.js — Orbit Store (jsonbin.io integration)
-  Env vars used:
-    JSONBIN_ITEMS_BIN_ID   - jsonbin bin id that will store {"items": [...]}
-    JSONBIN_ORDERS_BIN_ID  - jsonbin bin id that will store {"orders": [...]}
-    JSONBIN_MASTER_KEY     - jsonbin master key (required for private bins)
-  Behavior:
-    - On startup tries to GET items/orders from jsonbin (if bin ids provided).
-    - When items or orders change, attempts a PUT to jsonbin to persist.
-    - If jsonbin requests fail, falls back to local items.json / orders.json persistence.
+/* server.js — чистий, виправлений варіант
+   Змінні оточення:
+     JSONBIN_MASTER_KEY  - master key для jsonbin.io (серверний)
+     JSONBIN_ITEMS_BIN_ID - binId для items (записуємо { items: [...] })
+     JSONBIN_ORDERS_BIN_ID - binId для orders (записуємо { orders: [...] })
 */
 
 const express = require('express');
@@ -17,20 +12,28 @@ const io = require('socket.io')(http);
 const bodyParser = require('body-parser');
 const path = require('path');
 const fs = require('fs');
-const fetch = (...args) => import('node-fetch').then(({default:fetch})=>fetch(...args));
 
 app.use(bodyParser.json());
 app.set('trust proxy', true);
 
 const ITEMS_FILE = path.join(__dirname, 'items.json');
+const ORDERS_FILE = path.join(__dirname, 'orders.json');
 const BACKUP_DIR = path.join(__dirname, 'backups');
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+
+const JSONBIN_MASTER_KEY = process.env.JSONBIN_MASTER_KEY || null;
+const JSONBIN_ITEMS_BIN_ID = process.env.JSONBIN_ITEMS_BIN_ID || null;
+const JSONBIN_ORDERS_BIN_ID = process.env.JSONBIN_ORDERS_BIN_ID || null;
+const JSONBIN_BASE = 'https://api.jsonbin.io/v3/b';
+
+function log(){ console.log.apply(console, arguments); }
 
 function loadJsonFileSafe(filePath, defaultValue) {
   try {
     if (fs.existsSync(filePath)) {
       const raw = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      return parsed;
     }
   } catch (e) {
     console.error('Failed to read/parse', filePath, e);
@@ -53,165 +56,148 @@ function writeJsonFileSafe(filePath, data) {
   }
 }
 
-// load persisted or default data
-let orders = loadJsonFileSafe(ORDERS_FILE, []);
-let items = loadJsonFileSafe(ITEMS_FILE, [
-  { id: '1', title: 'Шипучка', price: 2, description: 'Освіжаюча шипучка', stock: 15, img: '/images/orbital.svg', active: true },
-  { id: '2', title: 'Player Kicker', price: 1, description: 'Програма для викиду гравців', stock: 8, img: '/images/icon.svg', active: true }
-]);
-
-// Ensure files exist on disk
-writeJsonFileSafe(ITEMS_FILE, items);
-writeJsonFileSafe(ORDERS_FILE, orders);
-
-function persistOrders(){ try{ writeJsonFileSafe(ORDERS_FILE, orders); }catch(e){console.error(e);} }
-function persistItems(){ try{ writeJsonFileSafe(ITEMS_FILE, items); }catch(e){console.error(e);} }
-
-// Autosave every 60s
-setInterval(()=>{
-  try{ persistItems(); persistOrders(); console.log('[autosave] saved items and orders at', new Date().toISOString()); }catch(e){ console.error('Autosave failed', e); }
-}, 60 * 1000);
-
-// graceful shutdown
-process.on('SIGINT', ()=>{ console.log('[shutdown] SIGINT received, saving data...'); persistItems(); persistOrders(); process.exit(0); });
-process.on('SIGTERM', ()=>{ console.log('[shutdown] SIGTERM received, saving data...'); persistItems(); persistOrders(); process.exit(0); });
-const ORDERS_FILE = path.join(__dirname, 'orders.json');
-
-const JSONBIN_ITEMS_BIN_ID = process.env.JSONBIN_ITEMS_BIN_ID || null;
-const JSONBIN_ORDERS_BIN_ID = process.env.JSONBIN_ORDERS_BIN_ID || null;
-const JSONBIN_MASTER_KEY = process.env.JSONBIN_MASTER_KEY || null;
-
-const JSONBIN_BASE = 'https://api.jsonbin.io/v3/b';
-
-function log(){ console.log.apply(console, arguments); }
-
-// In-memory state (fallback defaults)
+// default fallback data
 let items = [
   { id: '1', title: 'Шипучка', price: 2, description: 'Освіжаюча шипучка', stock: 15, img: '/images/orbital.svg', active: true },
   { id: '2', title: 'Player Kicker', price: 1, description: 'Програма для викиду гравців', stock: 8, img: '/images/icon.svg', active: true }
 ];
 let orders = [];
 
-// Local persistence helpers
-function persistItemsLocal(){ try{ fs.writeFileSync(ITEMS_FILE, JSON.stringify(items, null, 2), 'utf8'); }catch(e){ console.error('persistItemsLocal', e); } }
-function persistOrdersLocal(){ try{ fs.writeFileSync(ORDERS_FILE, JSON.stringify(orders, null, 2), 'utf8'); }catch(e){ console.error('persistOrdersLocal', e); } }
+// Load locals if present
+const localItems = loadJsonFileSafe(ITEMS_FILE, null);
+if (localItems) {
+  // support both array or wrapper { items: [...] }
+  if (Array.isArray(localItems)) items = localItems;
+  else if (localItems.items && Array.isArray(localItems.items)) items = localItems.items;
+}
+const localOrders = loadJsonFileSafe(ORDERS_FILE, null);
+if (localOrders) {
+  if (Array.isArray(localOrders)) orders = localOrders;
+  else if (localOrders.orders && Array.isArray(localOrders.orders)) orders = localOrders.orders;
+}
 
-// Load local files if exists
-try{ if(fs.existsSync(ITEMS_FILE)) items = JSON.parse(fs.readFileSync(ITEMS_FILE,'utf8')); }catch(e){ console.warn('Failed reading items.json', e); }
-try{ if(fs.existsSync(ORDERS_FILE)) orders = JSON.parse(fs.readFileSync(ORDERS_FILE,'utf8')); }catch(e){ console.warn('Failed reading orders.json', e); }
-
-// jsonbin helpers
+// jsonbin helpers (use native fetch available in Node 18+)
 async function jsonbinGet(binId){
   if(!binId) throw new Error('No binId');
+  if (typeof fetch !== 'function') throw new Error('fetch not available in this Node runtime');
+  const url = `${JSONBIN_BASE}/${binId}/latest`;
   const headers = {};
   if(JSONBIN_MASTER_KEY) headers['X-Master-Key'] = JSONBIN_MASTER_KEY;
-  const url = `${JSONBIN_BASE}/${binId}/latest`;
   const res = await fetch(url, { method: 'GET', headers });
   if(!res.ok) throw new Error('jsonbin GET failed: ' + res.status + ' ' + await res.text());
   const data = await res.json();
-  // jsonbin v3 returns { record: {...}, metadata: {...} }
-  if(data && data.record) return data.record;
-  return data;
+  return data && data.record ? data.record : data;
 }
 
 async function jsonbinPut(binId, payload){
   if(!binId) throw new Error('No binId');
+  if (typeof fetch !== 'function') throw new Error('fetch not available in this Node runtime');
+  const url = `${JSONBIN_BASE}/${binId}`;
   const headers = { 'Content-Type': 'application/json' };
   if(JSONBIN_MASTER_KEY) headers['X-Master-Key'] = JSONBIN_MASTER_KEY;
-  const url = `${JSONBIN_BASE}/${binId}`;
-  const res = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(payload) });
+  // try PUT
+  let res = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(payload) });
   if(res.ok){
-    try{ return await res.json(); }catch(e){ return { success:true }; }
+    try { return await res.json(); } catch(e){ return { success: true }; }
   }
-  // fallback: try POST (some setups expect POST to update)
-  const res2 = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
-  if(res2.ok){ try{ return await res2.json(); }catch(e){ return { success:true }; } }
+  // fallback POST
+  res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
+  if(res.ok) {
+    try { return await res.json(); } catch(e){ return { success:true }; }
+  }
   throw new Error('jsonbin write failed: ' + res.status + ' ' + await res.text());
 }
 
-// Initialize from jsonbin if configured
+// Try to initialize from jsonbin on startup (best-effort)
 (async function initFromJsonbin(){
-  try{
-    if(JSONBIN_ITEMS_BIN_ID){
+  try {
+    if (JSONBIN_ITEMS_BIN_ID) {
       const remote = await jsonbinGet(JSONBIN_ITEMS_BIN_ID);
-      // support both wrapper { items: [...] } or direct array
-      if(Array.isArray(remote)) items = remote;
-      else if(remote && Array.isArray(remote.items)) items = remote.items;
-      else if(remote && remote.items === undefined && Array.isArray(remote)) items = remote;
-      log('Loaded items from jsonbin, count:', items.length);
-      persistItemsLocal();
+      if (Array.isArray(remote)) items = remote;
+      else if (remote && Array.isArray(remote.items)) items = remote.items;
+      log('Loaded items from jsonbin:', items.length);
+      writeJsonFileSafe(ITEMS_FILE, items);
+    } else {
+      log('JSONBIN_ITEMS_BIN_ID not set — using local/default items');
     }
-    if(JSONBIN_ORDERS_BIN_ID){
+  } catch(e){
+    console.warn('jsonbin items load failed:', e.message);
+  }
+  try {
+    if (JSONBIN_ORDERS_BIN_ID) {
       const remoteOrders = await jsonbinGet(JSONBIN_ORDERS_BIN_ID);
-      if(Array.isArray(remoteOrders)) orders = remoteOrders;
-      else if(remoteOrders && Array.isArray(remoteOrders.orders)) orders = remoteOrders.orders;
-      else if(remoteOrders && remoteOrders.orders === undefined && Array.isArray(remoteOrders)) orders = remoteOrders;
-      log('Loaded orders from jsonbin, count:', orders.length);
-      persistOrdersLocal();
+      if (Array.isArray(remoteOrders)) orders = remoteOrders;
+      else if (remoteOrders && Array.isArray(remoteOrders.orders)) orders = remoteOrders.orders;
+      log('Loaded orders from jsonbin:', orders.length);
+      writeJsonFileSafe(ORDERS_FILE, orders);
+    } else {
+      log('JSONBIN_ORDERS_BIN_ID not set — using local/default orders');
     }
-  }catch(e){
-    console.warn('jsonbin init failed, using local files:', e.message);
+  } catch(e){
+    console.warn('jsonbin orders load failed:', e.message);
   }
 })();
 
-// Save helpers that try jsonbin then fallback to local
-async function saveItemsRemoteOrLocal(){
-  if(JSONBIN_ITEMS_BIN_ID){
-    try{
-      // write wrapper { items: [...] } to keep structure
+// persistence helpers: try remote then fallback local
+async function persistItemsRemoteOrLocal(){
+  if (JSONBIN_ITEMS_BIN_ID) {
+    try {
       await jsonbinPut(JSONBIN_ITEMS_BIN_ID, { items });
       log('Saved items to jsonbin');
       return;
-    }catch(e){
-      console.warn('jsonbin put items failed', e.message);
+    } catch(e){
+      console.warn('jsonbin persist items failed:', e.message);
     }
   }
-  persistItemsLocal();
+  writeJsonFileSafe(ITEMS_FILE, items);
 }
 
-async function saveOrdersRemoteOrLocal(){
-  if(JSONBIN_ORDERS_BIN_ID){
-    try{
+async function persistOrdersRemoteOrLocal(){
+  if (JSONBIN_ORDERS_BIN_ID) {
+    try {
       await jsonbinPut(JSONBIN_ORDERS_BIN_ID, { orders });
       log('Saved orders to jsonbin');
       return;
-    }catch(e){
-      console.warn('jsonbin put orders failed', e.message);
+    } catch(e){
+      console.warn('jsonbin persist orders failed:', e.message);
     }
   }
-  persistOrdersLocal();
+  writeJsonFileSafe(ORDERS_FILE, orders);
 }
 
-// Basic anti-spam
+// Auto-save periodically
+setInterval(()=>{ try{ persistItemsRemoteOrLocal(); persistOrdersRemoteOrLocal(); log('[autosave]'); } catch(e){ console.error('autosave failed', e); } }, 60000);
+
+// Simple anti-spam
 const lastOrderByIp = new Map();
 const lastOrderByName = new Map();
-const SPAM_WINDOW_MS = 8 * 1000; // 8s
+const SPAM_WINDOW_MS = 10 * 1000;
 
-// Routes
+// Routes (same semantics as before)
 app.get('/api/items', (req, res) => res.json(items));
 
 app.post('/api/addItem', async (req, res) => {
   const { title, price, description, stock, img, active } = req.body;
   if(!title || price === undefined) return res.status(400).json({ error: 'title and price required' });
   const id = Date.now().toString();
-  const it = { id, title: String(title), price: Number(price), description: description || '', stock: Number(stock) || 0, img: img || '/images/orbital.svg', active: active===undefined ? true : !!active };
+  const it = { id, title: String(title), price: Number(price), description: description||'', stock: Number(stock)||0, img: img||'/images/orbital.svg', active: active===undefined?true:!!active };
   items.push(it);
-  await saveItemsRemoteOrLocal();
+  await persistItemsRemoteOrLocal();
   io.emit('itemsUpdate', { action:'add', item: it });
   res.json({ success:true, item: it });
 });
 
 app.post('/api/updateItem', async (req, res) => {
   const { id, title, price, description, stock, img, active } = req.body;
-  const it = items.find(x => x.id === String(id));
-  if(!it) return res.status(404).json({ error: 'Item not found' });
-  if(title !== undefined) it.title = title;
-  if(price !== undefined) it.price = Number(price);
-  if(description !== undefined) it.description = description;
-  if(stock !== undefined) it.stock = Number(stock);
-  if(img !== undefined) it.img = img;
-  if(active !== undefined) it.active = !!active;
-  await saveItemsRemoteOrLocal();
+  const it = items.find(x=>x.id === String(id));
+  if(!it) return res.status(404).json({ error:'Item not found' });
+  if(title!==undefined) it.title = title;
+  if(price!==undefined) it.price = Number(price);
+  if(description!==undefined) it.description = description;
+  if(stock!==undefined) it.stock = Number(stock);
+  if(img!==undefined) it.img = img;
+  if(active!==undefined) it.active = !!active;
+  await persistItemsRemoteOrLocal();
   io.emit('itemsUpdate', { action:'update', item: it });
   io.emit('stockUpdate', { id: it.id, stock: it.stock });
   res.json({ success:true, item: it });
@@ -219,22 +205,22 @@ app.post('/api/updateItem', async (req, res) => {
 
 app.post('/api/deleteItem', async (req, res) => {
   const { id } = req.body;
-  const idx = items.findIndex(i => i.id === String(id));
-  if(idx === -1) return res.status(404).json({ error: 'Item not found' });
-  const removed = items.splice(idx, 1)[0];
-  await saveItemsRemoteOrLocal();
+  const idx = items.findIndex(i=>i.id === String(id));
+  if(idx === -1) return res.status(404).json({ error:'Item not found' });
+  const removed = items.splice(idx,1)[0];
+  await persistItemsRemoteOrLocal();
   io.emit('itemsUpdate', { action:'delete', id: removed.id });
   res.json({ success:true, item: removed });
 });
 
 app.post('/api/order', async (req, res) => {
   const { name, itemId, quantity } = req.body;
-  if(!name || !itemId || !quantity) return res.status(400).json({ error: 'Вкажіть ім\'я та кількість' });
-  const it = items.find(i => i.id === String(itemId));
+  if(!name || !itemId || !quantity) return res.status(400).json({ error: "Вкажіть ім'я та кількість" });
+  const it = items.find(i=>i.id === String(itemId));
   if(!it) return res.status(400).json({ error: 'Товар не знайдено' });
   const q = Number(quantity);
   if(!Number.isInteger(q) || q <= 0) return res.status(400).json({ error: 'Кількість має бути цілим позитивним числом' });
-  if(it.stock < q) return res.status(400).json({ error: 'Немає достатньої кількості на складі', available: it.stock });
+  if(it.stock < q) return res.status(400).json({ error:'Немає достатньої кількості на складі', available: it.stock });
   const ip = req.ip || req.connection.remoteAddress || 'unknown';
   const now = Date.now();
   const lastIp = lastOrderByIp.get(ip) || 0;
@@ -242,15 +228,14 @@ app.post('/api/order', async (req, res) => {
   if(now - lastIp < SPAM_WINDOW_MS || now - lastName < SPAM_WINDOW_MS){
     return res.status(429).json({ error: 'Забагато запитів. Зачекайте кілька секунд.' });
   }
-  // decrease stock and create order
   it.stock -= q;
   const total = it.price * q;
-  const order = { id: Date.now().toString(), name, item: { id: it.id, title: it.title, price: it.price }, quantity: q, total, status: 'pending', createdAt: new Date().toISOString() };
+  const order = { id: Date.now().toString(), name, item:{id: it.id, title: it.title, price: it.price}, quantity: q, total, status:'pending', createdAt: new Date().toISOString() };
   orders.unshift(order);
   lastOrderByIp.set(ip, now);
   lastOrderByName.set(name, now);
-  await saveOrdersRemoteOrLocal();
-  await saveItemsRemoteOrLocal();
+  await persistOrdersRemoteOrLocal();
+  await persistItemsRemoteOrLocal();
   io.emit('newOrder', order);
   io.emit('stockUpdate', { id: it.id, stock: it.stock });
   io.emit('ordersUpdate', orders);
@@ -261,23 +246,23 @@ app.get('/api/orders', (req, res) => res.json(orders));
 
 app.post('/api/orders/:id/approve', async (req, res) => {
   const id = req.params.id;
-  const ord = orders.find(o => o.id === id);
-  if(!ord) return res.status(404).json({ error: 'Order not found' });
+  const ord = orders.find(o=>o.id === id);
+  if(!ord) return res.status(404).json({ error:'Order not found' });
   ord.status = 'approved';
-  await saveOrdersRemoteOrLocal();
+  await persistOrdersRemoteOrLocal();
   io.emit('ordersUpdate', orders);
   res.json({ success:true, order: ord });
 });
 
 app.post('/api/orders/:id/reject', async (req, res) => {
   const id = req.params.id;
-  const ord = orders.find(o => o.id === id);
-  if(!ord) return res.status(404).json({ error: 'Order not found' });
+  const ord = orders.find(o=>o.id === id);
+  if(!ord) return res.status(404).json({ error:'Order not found' });
   ord.status = 'rejected';
   const it = items.find(i => i.id === ord.item.id);
   if(it) it.stock += ord.quantity;
-  await saveOrdersRemoteOrLocal();
-  await saveItemsRemoteOrLocal();
+  await persistOrdersRemoteOrLocal();
+  await persistItemsRemoteOrLocal();
   io.emit('ordersUpdate', orders);
   io.emit('stockUpdate', { id: it ? it.id : null, stock: it ? it.stock : 0 });
   res.json({ success:true, order: ord });
@@ -286,40 +271,39 @@ app.post('/api/orders/:id/reject', async (req, res) => {
 app.post('/api/orders/:id/cancel', async (req, res) => {
   const id = req.params.id;
   const reason = req.body.reason || req.query.reason || 'Не вказано';
-  const ord = orders.find(o => o.id === id);
-  if(!ord) return res.status(404).json({ error: 'Order not found' });
+  const ord = orders.find(o=>o.id === id);
+  if(!ord) return res.status(404).json({ error:'Order not found' });
   ord.status = 'cancelled';
   ord.cancellationReason = reason;
   const it = items.find(i => i.id === ord.item.id);
   if(it) it.stock += ord.quantity;
-  await saveOrdersRemoteOrLocal();
-  await saveItemsRemoteOrLocal();
+  await persistOrdersRemoteOrLocal();
+  await persistItemsRemoteOrLocal();
   io.emit('ordersUpdate', orders);
   io.emit('stockUpdate', { id: it ? it.id : null, stock: it ? it.stock : 0 });
   io.emit('orderCancelled', { order: ord, reason });
   res.json({ success:true, order: ord });
 });
 
-app.post('/api/orders/clear', async (req, res) => { orders = []; await saveOrdersRemoteOrLocal(); io.emit('ordersUpdate', orders); res.json({ success:true }); });
+app.post('/api/orders/clear', async (req, res) => { orders = []; await persistOrdersRemoteOrLocal(); io.emit('ordersUpdate', orders); res.json({ success:true }); });
 
 app.get('/api/myorders', (req, res) => {
   const name = req.query.name;
   if(!name) return res.status(400).json({ error: 'Name required' });
-  res.json(orders.filter(o => o.name === name));
+  res.json(orders.filter(o=>o.name === name));
 });
 
 app.get('/api/summary', (req, res) => {
-  const approved = orders.filter(o => o.status === 'approved');
+  const approved = orders.filter(o=>o.status === 'approved');
   const count = approved.length;
-  const revenue = approved.reduce((s,o) => s + (o.total||0), 0);
+  const revenue = approved.reduce((s,o)=>s+(o.total||0), 0);
   res.json({ approvedCount: count, revenue });
 });
 
 // 404 for /api
-app.use('/api', (req, res) => res.status(404).json({ error: 'API endpoint not found' }));
+app.use('/api', (req, res) => res.status(404).json({ error:'API endpoint not found' }));
 app.use(express.static(path.join(__dirname, 'public')));
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public','index.html')));
 
 const PORT = process.env.PORT || 3000;
 http.listen(PORT, ()=> console.log('[start] Server on http://localhost:'+PORT+' — PID:'+process.pid));
-http.listen(PORT, () => log('Server listening on http://localhost:' + PORT));
