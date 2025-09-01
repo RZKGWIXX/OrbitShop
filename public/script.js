@@ -107,11 +107,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('displayBuyerName') && (document.getElementById('displayBuyerName').textContent = (localStorage.getItem('buyerName')||'Гість'));
     modal.classList.add('show');
     const qty = modal.querySelector('#buyQty'); const total = modal.querySelector('#totalPrice');
-    qty.addEventListener('input', ()=>{ const q=Math.max(1, Math.floor(Number(qty.value)||1)); qty.value=q; total.textContent=(item.price*q)+' грн'; });
+    qty.addEventListener('input', ()=>{ const q=Math.max(0, Math.floor(Number(qty.value)||0)); qty.value=q; total.textContent=(item.price*q)+' грн'; });
     modal.querySelector('#cancelOrder').addEventListener('click', ()=> modal.classList.remove('show'));
     modal.querySelector('#confirmOrder').addEventListener('click', async ()=>{
       const name = localStorage.getItem('buyerName') || '';
-      const q = Math.max(1, Math.floor(Number(qty.value)||1));
+      const q = Math.max(0, Math.floor(Number(qty.value)||0));
       if (!name){ showToast("Введіть своє ім'я",'error'); return; }
       if (q<1){ showToast('Кількість повинна бути >=1','error'); return; }
       showLoading(true);
